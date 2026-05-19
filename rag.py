@@ -39,6 +39,7 @@ def extractFromPDF(path: str):
                           "text": text})
     return pages
 
+# Work in progress (Finishing up PDF first)
 def extractFromPPT(path: str):
     return path
 
