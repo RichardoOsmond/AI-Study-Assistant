@@ -40,6 +40,7 @@ def createSession(name: str):
     sessions = loadSessions()
     sessions[session_id] = session
     saveSessions(sessions)
+    return session
 
 def get_session(session_id: str):
     return loadSessions().get(session_id)

@@ -16,5 +16,8 @@ def get_llm(max_tokens: int = 2048):
     )
 
 def get_summary_chain():
-    summaryPrompt = ChatPromptTemplate.from_messages({})
+    summaryPrompt = ChatPromptTemplate.from_messages([
+        ("system", ""),
+        ("human", "")
+    ])
     return summaryPrompt | get_llm() | StrOutputParser()

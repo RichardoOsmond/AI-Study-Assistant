@@ -24,6 +24,10 @@ def contextRetrieval(query: str, collection, k: int = k):
     results = collection.query(query_texts=[query], n_results=min(k, collection.count()))
 
     chunks = []
+    documents = results["documents"][0]
+    for document in documents:
+        chunks.append(document)
+    return "\n\n".join(chunks)
 
 # Get Agent
 def buildAgent():
@@ -40,12 +44,15 @@ def buildAgent():
         3. When supplementing information with web search, briefly tell them.
         4. Keep answers clear, concise, and student-friendly.
         5. Never make up facts, say "I'm not sure" if needed."""), ("human", """
+        Chat History: {chat_history}
+        
         Question: {question}
         
         Local Study Material Context: 
         {context}
         
-        Use the search tool if the context provides insufficient information.""")
+        Use the search tool if the context provides insufficient information."""),
+        ("placeholder", "{agent_scratchpad}")
     ])
     llm = get_llm()
     tools =[TavilySearchResults(max_results=3)]
@@ -54,3 +61,16 @@ def buildAgent():
 
 def chatWithAI(question: str, chat_history: list, collection):
     agent = buildAgent()
+    context = contextRetrieval(question, collection)
+    history = ""
+    for message in chat_history[-6:]:
+        role = "User" if message["Role"] == "User" else "Assistant"
+        history += f"{role}: {message['Content']}\n"
+
+    response = agent.invoke({
+        "question": question,
+        "context": context,
+        "chat_history": history
+    })
+
+    return response["output"]

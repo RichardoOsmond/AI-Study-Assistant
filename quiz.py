@@ -48,7 +48,7 @@ def get_grading_chain(): # Change Prompt Template
         Student's Answer: {answer}
         Return a valid JSON array with no extra text, replacing the none under the 'correct' key with True or False and 'feedback' key with your feedback""")
     ])
-    return gradePrompt | get_llm(max_tokens=500) | StrOutputParser
+    return gradePrompt | get_llm(max_tokens=500) | StrOutputParser()
 
 # Select Random Chunks
 def chunkSelection(collection, n: int = 20):
