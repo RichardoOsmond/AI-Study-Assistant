@@ -26,3 +26,6 @@ This is a web-based app built using streamlit, integrated with APIs with groq as
 - Groq API Key can be found in console.groq.com (free)
 - Tavily API Key can be found in tavily.com (free)
 4. Run the app using "streamlit run main.py" at the terminal
+
+## Improvements to be done
+- Rewrite RAG Pipeline using Advanced RAG Pipeline, focusing on an app that is actually usable (can be used and bring benefits to users).
