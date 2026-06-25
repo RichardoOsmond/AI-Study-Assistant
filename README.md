@@ -29,3 +29,4 @@ This is a web-based app built using streamlit, integrated with APIs with groq as
 
 ## Improvements to be done
 - Rewrite RAG Pipeline using Advanced RAG Pipeline, focusing on an app that is actually usable (can be used and bring benefits to users).
+- Replace Streamlit with HTML, CSS, Javascript as the frontend to allow for more flexibility in design.
