@@ -3,10 +3,10 @@ import uuid
 from pathlib import Path
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-from rag import CHROMA_PATH
+from .rag import CHROMA_PATH
 from datetime import datetime
 
-sessionsFile = Path("./sessions.json")
+sessionsFile = Path(__file__).parent.parent / "data" / "sessions.json"
 
 embed_function = SentenceTransformerEmbeddingFunction(
     model_name="all-MiniLM-L6-v2"
@@ -59,7 +59,7 @@ def deleteSession(session_id: str):
 
     if session:
         try:
-            from rag import getClient
+            from .rag import getClient
             client = getClient()
             client.delete_collection(session["collection_name"])
             return
@@ -89,5 +89,5 @@ def getSessionsList():
 
 # Get Session Collection
 def getSessionCollection(session: dict):
-    from rag import get_collection
+    from .rag import get_collection
     return get_collection(session["collection_name"])

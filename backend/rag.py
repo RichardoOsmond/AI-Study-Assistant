@@ -6,7 +6,7 @@ import hashlib
 from pathlib import Path
 import streamlit as st
 
-CHROMA_PATH = "./chroma_db"
+CHROMA_PATH = str(Path(__file__).parent.parent / "data" / "chroma_db")
 chunkSize = 400
 chunkOverlap = 80
 

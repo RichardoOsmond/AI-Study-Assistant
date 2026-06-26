@@ -1,7 +1,11 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import streamlit as st
 
-from chat import chatWithAI
-from session import *
+from backend.chat import chatWithAI
+from backend.session import *
 
 st.set_page_config(
     page_title="AI Study Assistant",
@@ -135,7 +139,6 @@ with st.sidebar:
         st.rerun()
 
 # Home Page
-# Home Page
 if page == "Home":
     active_session = getActiveSession()
     collection = getCollection()
@@ -208,7 +211,7 @@ if page == "Home":
         st.rerun()
 
 elif page == "Upload File":
-    from rag import fileUpload
+    from backend.rag import fileUpload
     import tempfile, os
 
     st.title("📄 Upload Study Material")
@@ -243,14 +246,152 @@ elif page == "Upload File":
         for f in files:
             st.markdown(f"- 📎 {f}")
 
-# ── Summarize Page ────────────────────────────────────────────────────────────
-
+# Summarize Page
 elif page == "Summarize":
+    from backend.summarize import summarizeDocument
+
     st.title("📝 Summarize")
-    st.info("Summarize feature coming soon!")
 
-# ── Quiz Page ─────────────────────────────────────────────────────────────────
+    active_session = getActiveSession()
+    collection = getCollection()
 
+    files = active_session.get("files", [])
+    if not files:
+        st.warning("No files uploaded yet. Go to **Upload File** to add study material first.")
+    else:
+        st.caption(f"📎 Using: {', '.join(files)}")
+
+        detail_level = st.radio(
+            "Detail level",
+            ["brief", "standard", "detailed"],
+            index=1,
+            horizontal=True,
+        )
+
+        summary_key = f"summary_{active_session['session_id']}_{detail_level}"
+
+        if st.button("✨ Generate Summary", use_container_width=True):
+            with st.spinner("Summarizing your documents…"):
+                try:
+                    st.session_state[summary_key] = summarizeDocument(collection, detail_level)
+                except Exception as e:
+                    st.error(f"Error generating summary: {e}")
+
+        if summary_key in st.session_state:
+            st.divider()
+            st.markdown(st.session_state[summary_key])
+            if st.button("🗑️ Clear Summary"):
+                del st.session_state[summary_key]
+                st.rerun()
+
+# Quiz Page
 elif page == "Quiz":
+    from backend.quiz import generateQuiz, gradeQuiz
+
     st.title("🧠 Quiz")
-    st.info("Quiz feature coming soon!")
+
+    active_session = getActiveSession()
+    collection = getCollection()
+
+    files = active_session.get("files", [])
+    if not files:
+        st.warning("No files uploaded yet. Go to **Upload File** to add study material first.")
+    else:
+        st.caption(f"📎 Using: {', '.join(files)}")
+
+        sid = active_session["session_id"]
+        q_key = f"quiz_questions_{sid}"
+        a_key = f"quiz_answers_{sid}"
+        r_key = f"quiz_results_{sid}"
+
+        with st.expander("Quiz settings", expanded=q_key not in st.session_state):
+            col1, col2 = st.columns(2)
+            with col1:
+                n_questions = st.number_input("Number of questions", min_value=1, max_value=20, value=5)
+            with col2:
+                q_type = st.selectbox("Question type", ["mixed", "mcq", "short"], index=0)
+
+            if st.button("🎲 Generate Quiz", use_container_width=True):
+                with st.spinner("Generating questions…"):
+                    try:
+                        questions = generateQuiz(collection, n_questions=n_questions, question_type=q_type)
+                        st.session_state[q_key] = questions
+                        st.session_state[a_key] = {}
+                        if r_key in st.session_state:
+                            del st.session_state[r_key]
+                        st.rerun()
+                    except FileNotFoundError:
+                        st.error("No documents found in this session.")
+                    except Exception as e:
+                        st.error(f"Error generating quiz: {e}")
+
+        # Quesetions
+        if q_key in st.session_state:
+            questions = st.session_state[q_key]
+            answers = st.session_state.get(a_key, {})
+            results = st.session_state.get(r_key)
+
+            for i, q in enumerate(questions):
+                with st.container(border=True):
+                    st.markdown(f"**Q{i+1}. {q['question']}**")
+
+                    if q["type"] == "mcq":
+                        opts = q["options"]
+                        choice = st.radio(
+                            "Choose an answer",
+                            options=list(opts.keys()),
+                            format_func=lambda k, o=opts: f"{k}. {o[k]}",
+                            key=f"mcq_{sid}_{i}",
+                            label_visibility="collapsed",
+                            disabled=results is not None,
+                        )
+                        answers[i] = choice
+                    else:
+                        user_ans = st.text_area(
+                            "Your answer",
+                            key=f"short_{sid}_{i}",
+                            label_visibility="collapsed",
+                            disabled=results is not None,
+                        )
+                        answers[i] = user_ans
+
+                    if results:
+                        res = results[i]
+                        if res["correct"]:
+                            st.success(f"✅ Correct — {res['feedback']}")
+                        else:
+                            if q["type"] == "mcq":
+                                correct_key = q["answer"]
+                                correct_text = q["options"][correct_key]
+                                st.error(f"❌ Incorrect — Correct answer: **{correct_key}. {correct_text}**")
+                            else:
+                                st.error(f"❌ Incorrect — {res['feedback']}")
+                                st.info(f"Model answer: {q['model_answer']}")
+
+            st.session_state[a_key] = answers
+
+            if results is None:
+                if st.button("📤 Submit Quiz", use_container_width=True):
+                    with st.spinner("Grading…"):
+                        try:
+                            st.session_state[r_key] = gradeQuiz(questions, answers)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error grading quiz: {e}")
+            else:
+                score = sum(1 for r in results if r["correct"])
+                total = len(results)
+                st.divider()
+                st.markdown(f"### Result: {score} / {total}")
+                if score == total:
+                    st.success("Perfect score! 🎉")
+                elif score >= total * 0.7:
+                    st.info("Good work! Keep it up.")
+                else:
+                    st.warning("Keep studying — you'll get there!")
+
+                if st.button("🔄 New Quiz", use_container_width=True):
+                    for k in [q_key, a_key, r_key]:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                    st.rerun()
