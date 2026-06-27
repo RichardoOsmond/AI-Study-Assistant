@@ -1,17 +1,24 @@
 # Core AI
 langchain==0.2.16
-langchain-groq>=0.1.0
+langchain-groq==0.1.10
 langchain-community==0.2.16
 
 # Vector store & embeddings
-chromadb>=0.5.0
-sentence-transformers>=3.0.0
+chromadb==1.5.9
+sentence-transformers==5.5.1
 
 # Document parsing
-PyMuPDF>=1.24.0
+PyMuPDF==1.27.2.3
+python-pptx==1.0.2
 
 # UI
-streamlit>=1.35.0
+streamlit==1.58.0
 
 # Utilities
-python-dotenv>=1.0.0
+python-dotenv==1.2.2
+
+# Testing
+pytest==9.1.1
+pytest-playwright==0.8.0
+pytest-benchmark==5.2.3
+playwright==1.60.0

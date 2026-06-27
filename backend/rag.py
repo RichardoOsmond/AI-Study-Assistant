@@ -1,6 +1,8 @@
 import fitz
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from pptx import Presentation
+from pptx.util import Pt
 import re
 import hashlib
 from pathlib import Path
@@ -39,9 +41,33 @@ def extractFromPDF(path: str):
                           "text": text})
     return pages
 
-# Work in progress (Finishing up PDF first)
 def extractFromPPT(path: str):
-    return path
+    prs = Presentation(path)
+    pages = []
+
+    for i, slide in enumerate(prs.slides):
+        parts = []
+
+        for shape in slide.shapes:
+            # Text frames (titles, body text, text boxes)
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    line = " ".join(run.text for run in para.runs).strip()
+                    if line:
+                        parts.append(line)
+
+            # Tables
+            if shape.has_table:
+                for row in shape.table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(cells))
+
+        text = re.sub(r'\s+', ' ', " ".join(parts)).strip()
+        if text:
+            pages.append({"page": i + 1, "text": text})
+
+    return pages
 
 # Overlap Chunking
 def textChunk(text: str, source: str, page: int, chunkSize: int = 400, chunkOverlap: int = 80):

@@ -114,7 +114,14 @@ with st.sidebar:
     st.divider()
 
     # Session selector
-    st.markdown("**Sessions**")
+    col_label, col_btn = st.columns([3, 1])
+    with col_label:
+        st.markdown("**Sessions**")
+    with col_btn:
+        if st.button("＋ New", use_container_width=True):
+            new_session = createSession("New Study Session")
+            st.session_state.active_session = new_session["session_id"]
+            st.rerun()
 
     # Ensure at least one session exists BEFORE building the lists
     active_session = getActiveSession()
@@ -218,7 +225,7 @@ elif page == "Upload File":
     active_session = getActiveSession()
     collection = getCollection()
 
-    uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+    uploaded_file = st.file_uploader("Upload a PDF or PowerPoint file", type=["pdf", "pptx"])
 
     if uploaded_file:
         if uploaded_file.name in active_session.get("files", []):
