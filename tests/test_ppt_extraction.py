@@ -153,3 +153,27 @@ def test_file_upload_missing_file():
     from unittest.mock import MagicMock
     with pytest.raises(FileNotFoundError):
         fileUpload("nonexistent.pptx", MagicMock())
+
+
+def test_file_upload_empty_pptx_raises(empty_pptx):
+    """fileUpload should raise (not silently succeed) when no text is extractable."""
+    from unittest.mock import MagicMock
+    with pytest.raises(ValueError):
+        fileUpload(str(empty_pptx), MagicMock())
+
+
+def test_file_upload_legacy_ppt_rejected(tmp_path):
+    """Legacy .ppt files get a clear error instead of a cryptic parser failure."""
+    from unittest.mock import MagicMock
+    fake_ppt = tmp_path / "old.ppt"
+    fake_ppt.write_bytes(b"\xd0\xcf\x11\xe0 fake legacy ppt")
+    with pytest.raises(ValueError, match="pptx"):
+        fileUpload(str(fake_ppt), MagicMock())
+
+
+def test_file_upload_clears_stale_chunks(sample_pptx):
+    """Re-uploading a file deletes its previous chunks before upserting."""
+    from unittest.mock import MagicMock
+    mock_collection = MagicMock()
+    fileUpload(str(sample_pptx), mock_collection)
+    mock_collection.delete.assert_called_once_with(where={"source": "sample.pptx"})

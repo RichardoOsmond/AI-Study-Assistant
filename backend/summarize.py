@@ -1,19 +1,7 @@
-import os
-from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-load_dotenv()
-
-model = "llama-3.3-70b-versatile"
-
-def get_llm(max_tokens: int = 2048):
-    return ChatGroq(
-        model=model,
-        api_key=os.environ['GROQ_API_KEY'],
-        max_tokens=max_tokens
-    )
+from .llm import get_llm
 
 def get_summary_chain():
     summaryPrompt = ChatPromptTemplate.from_messages([
@@ -33,13 +21,32 @@ Study Material:
     return summaryPrompt | get_llm(max_tokens=2048) | StrOutputParser()
 
 
-def summarizeDocument(collection, detail_level: str = "standard") -> str:
+def summarizeDocument(collection, detail_level: str = "standard", max_chunks: int = 40) -> dict:
+    """Summarize the session's documents.
+
+    Returns {"summary": str, "chunks_used": int, "total_chunks": int} so the
+    UI can tell the user when the material was sampled rather than fully read.
+    """
     if collection.count() == 0:
         raise FileNotFoundError("No documents uploaded in this session.")
 
     all_chunks = collection.get(include=["documents"])["documents"]
-    # Cap at 40 chunks
-    context = "\n\n".join(all_chunks[:40])
+
+    if len(all_chunks) > max_chunks:
+        # Sample evenly across the whole document instead of only the start,
+        # so the summary is not biased toward the first pages
+        step = len(all_chunks) / max_chunks
+        selected = [all_chunks[int(i * step)] for i in range(max_chunks)]
+    else:
+        selected = all_chunks
+
+    context = "\n\n".join(selected)
 
     chain = get_summary_chain()
-    return chain.invoke({"context": context, "detail_level": detail_level})
+    summary = chain.invoke({"context": context, "detail_level": detail_level})
+
+    return {
+        "summary": summary,
+        "chunks_used": len(selected),
+        "total_chunks": len(all_chunks),
+    }

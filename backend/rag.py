@@ -2,24 +2,25 @@ import fitz
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from pptx import Presentation
-from pptx.util import Pt
 import re
 import hashlib
+import logging
 from pathlib import Path
-import streamlit as st
+from functools import lru_cache
 
-CHROMA_PATH = str(Path(__file__).parent.parent / "data" / "chroma_db")
-chunkSize = 400
-chunkOverlap = 80
+from .config import CHROMA_PATH, EMBED_MODEL
 
-# ChromaDB Setup
-@st.cache_resource
+logger = logging.getLogger(__name__)
+
+# ChromaDB Setup — lru_cache gives the same run-once semantics as
+# st.cache_resource but without coupling the backend to Streamlit
+@lru_cache(maxsize=1)
 def getClient():
     return chromadb.PersistentClient(path=CHROMA_PATH)
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def getEmbedFunction():
-    return SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    return SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
 
 def get_collection(collectionName: str):
     return getClient().get_or_create_collection(
@@ -48,6 +49,14 @@ def extractFromPPT(path: str):
     for i, slide in enumerate(prs.slides):
         parts = []
 
+        # Slide title, used as a context prefix for this slide's chunks
+        title = ""
+        try:
+            if slide.shapes.title is not None and slide.shapes.title.text.strip():
+                title = slide.shapes.title.text.strip()
+        except (AttributeError, KeyError):
+            pass
+
         for shape in slide.shapes:
             # Text frames (titles, body text, text boxes)
             if shape.has_text_frame:
@@ -65,23 +74,53 @@ def extractFromPPT(path: str):
 
         text = re.sub(r'\s+', ' ', " ".join(parts)).strip()
         if text:
-            pages.append({"page": i + 1, "text": text})
+            pages.append({"page": i + 1, "text": text, "title": title})
 
     return pages
 
-# Overlap Chunking
-def textChunk(text: str, source: str, page: int, chunkSize: int = 400, chunkOverlap: int = 80):
+# Sentence-aware Chunking
+def _splitSentences(text: str, maxChars: int) -> list:
+    """Split text on sentence boundaries; hard-split any sentence longer than maxChars."""
+    parts = re.split(r'(?<=[.!?])\s+', text)
+    sentences = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # A "sentence" longer than a whole chunk (e.g. a table row or slide
+        # with no punctuation) gets hard-split so packing can't stall
+        while len(part) > maxChars:
+            sentences.append(part[:maxChars])
+            part = part[maxChars:].strip()
+        if part:
+            sentences.append(part)
+    return sentences
+
+
+def textChunk(text: str, source: str, page: int, maxChars: int = 1000,
+              overlapChars: int = 150, title: str = ""):
+    """Pack whole sentences into ~maxChars chunks with sentence-level overlap.
+
+    Chunks never cut mid-sentence, so each one is a coherent passage for both
+    embedding and retrieval. `title` (e.g. a slide title) is prepended to each
+    chunk to give the embedding extra context.
+    """
+    prefix = f"{title}: " if title else ""
+    sentences = _splitSentences(text, maxChars)
+
     chunks = []
-    start = 0
+    current = []
+    length = 0
     idx = 0
-    while start < len(text):
-        end = start + chunkSize
-        chunk = text[start:end].strip()
-        if chunk:
+
+    def emit():
+        nonlocal idx
+        chunk_text = (prefix + " ".join(current)).strip()
+        if chunk_text:
             uid = hashlib.md5(f"{source}:{page}:{idx}".encode()).hexdigest()
             chunks.append({
                 "uid": uid,
-                "text": chunk,
+                "text": chunk_text,
                 "metadata": {
                     "source": source,
                     "page": page,
@@ -89,9 +128,26 @@ def textChunk(text: str, source: str, page: int, chunkSize: int = 400, chunkOver
                 }
             })
             idx += 1
-        start += chunkSize - chunkOverlap
-        if end >= len(text):
-            break
+
+    for sentence in sentences:
+        if current and length + len(sentence) > maxChars:
+            emit()
+            # Carry the last sentence(s) over as overlap so answers spanning
+            # a chunk boundary are still retrievable in one piece
+            kept = []
+            kept_len = 0
+            for prev in reversed(current):
+                if kept_len + len(prev) > overlapChars:
+                    break
+                kept.insert(0, prev)
+                kept_len += len(prev)
+            current = kept
+            length = kept_len
+        current.append(sentence)
+        length += len(sentence) + 1
+
+    if current:
+        emit()
 
     return chunks
 
@@ -99,26 +155,33 @@ def textChunk(text: str, source: str, page: int, chunkSize: int = 400, chunkOver
 def fileUpload(filepath: str, collection):
     path = Path(filepath)
     if not path.exists():
-        print("File not found")
-        raise FileNotFoundError
+        raise FileNotFoundError(f"File not found: {filepath}")
 
     suffix = path.suffix.lower()
 
     if suffix == ".pdf":
         pages = extractFromPDF(str(path))
-    elif suffix in (".pptx", ".ppt"):
+    elif suffix == ".pptx":
         pages = extractFromPPT(str(path))
+    elif suffix == ".ppt":
+        raise ValueError("Legacy .ppt files are not supported. Save it as .pptx and try again.")
     else:
-        print("File must be in PDF or PPTX format")
-        raise ValueError
+        raise ValueError("File must be in PDF or PPTX format.")
 
     if not pages:
-        print("No text found")
-        return
+        raise ValueError("No text could be extracted from this file.")
 
     all_chunks = []
     for page in pages:
-        all_chunks.extend(textChunk(page["text"], path.name, page["page"]))
+        all_chunks.extend(textChunk(page["text"], path.name, page["page"],
+                                    title=page.get("title", "")))
+
+    # Remove stale chunks from any previous upload of the same file, so a
+    # shorter re-upload doesn't leave orphaned chunks in the collection
+    try:
+        collection.delete(where={"source": path.name})
+    except Exception:
+        logger.debug("No previous chunks to delete for %s", path.name)
 
     collection.upsert(
         ids = [chunk["uid"] for chunk in all_chunks],
@@ -126,4 +189,4 @@ def fileUpload(filepath: str, collection):
         metadatas = [chunk["metadata"] for chunk in all_chunks]
     )
 
-    print(f"{path.name} succesfully uploaded to session collection")
+    logger.info("%s successfully uploaded to session collection", path.name)

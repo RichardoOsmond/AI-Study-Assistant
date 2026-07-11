@@ -185,3 +185,5 @@ chroma_db/
 sessions.json
 summaries/
 enriched/
+# Node
+node_modules/
