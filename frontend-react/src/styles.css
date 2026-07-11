@@ -1,0 +1,146 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+.app { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ─────────────────────────────────────────── */
+.sidebar {
+  width: 260px;
+  background: #f0f2f6;
+  padding: 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.sidebar-title { font-size: 1.15rem; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.nav-item:hover { background: #e2e6ee; }
+.nav-item.active { background: #1370f2; color: white; }
+
+.sessions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.session-select { padding: 0.4rem; border-radius: 6px; border: 1px solid #ccc; }
+
+.manage { font-size: 0.9rem; }
+.manage summary { cursor: pointer; padding: 0.25rem 0; }
+.manage input {
+  width: 100%;
+  padding: 0.4rem;
+  margin: 0.4rem 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+.confirm { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
+
+/* ── Main area ───────────────────────────────────────── */
+.main { flex: 1; padding: 2rem; max-width: 860px; }
+.page { display: flex; flex-direction: column; gap: 1rem; }
+.caption { color: #666; font-size: 0.85rem; }
+
+button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+button:hover:not(:disabled) { border-color: #1370f2; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; align-self: flex-start; }
+button.danger { color: #c62828; }
+
+/* ── Welcome cards ───────────────────────────────────── */
+.welcome { display: flex; flex-direction: column; gap: 0.75rem; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem; }
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+  min-height: 110px;
+  padding: 1.2rem 1rem;
+  background: white;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 12px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.card:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1); border-color: #1370f2; }
+.card span { font-size: 0.85rem; color: #555; }
+
+/* ── Chat ────────────────────────────────────────────── */
+.chat-page { min-height: calc(100vh - 4rem); }
+.messages { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+.bubble {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  max-width: 85%;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.bubble.user { background: #1370f2; color: white; margin-left: auto; border-radius: 10px 10px 2px 10px; }
+.bubble.ai { background: #f0f0ec; border-radius: 10px 10px 10px 2px; }
+
+.chat-input { display: flex; gap: 0.5rem; margin-top: auto; }
+.chat-input input {
+  flex: 1;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+/* ── Banners ─────────────────────────────────────────── */
+.banner { padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.92rem; }
+.banner.error { background: #fdecea; color: #c62828; }
+.banner.success { background: #e8f5e9; color: #2e7d32; }
+.banner.warning { background: #fff8e1; color: #8d6e00; }
+
+/* ── Upload / Summarize / Quiz ───────────────────────── */
+.file-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+.file-list li { display: flex; align-items: center; gap: 0.75rem; }
+
+.radio-row { display: flex; gap: 1rem; }
+.radio-row label { display: flex; gap: 0.3rem; align-items: center; }
+
+.summary-text { white-space: pre-wrap; font-family: inherit; line-height: 1.5; }
+
+.quiz-settings { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.quiz-settings label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; }
+.quiz-settings input, .quiz-settings select { padding: 0.4rem; border: 1px solid #ccc; border-radius: 6px; }
+
+.question {
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: white;
+}
+.option { display: flex; gap: 0.5rem; align-items: center; }
+.question textarea { padding: 0.5rem; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+
+.quiz-result { text-align: center; padding: 1rem; }
