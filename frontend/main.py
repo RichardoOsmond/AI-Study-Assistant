@@ -1,4 +1,5 @@
 import sys
+import html
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -51,8 +52,9 @@ div[data-testid="stButton"] > button.action-card {
     gap: 1rem;
     margin-top: 1rem;
 }
-/* Make Streamlit buttons look like cards */
-div[data-testid="column"] div[data-testid="stButton"] > button {
+/* Make Streamlit buttons look like cards — scoped to the main area only,
+   so sidebar buttons (e.g. "+ New") keep their normal size */
+[data-testid="stMain"] div[data-testid="column"] div[data-testid="stButton"] > button {
     width: 100%;
     min-height: 110px;
     background: #ffffff;
@@ -65,11 +67,11 @@ div[data-testid="column"] div[data-testid="stButton"] > button {
     white-space: normal !important;
     line-height: 1.4 !important;
 }
-div[data-testid="column"] div[data-testid="stButton"] > button:hover {
+[data-testid="stMain"] div[data-testid="column"] div[data-testid="stButton"] > button:hover {
     box-shadow: 0 4px 14px rgba(0,0,0,0.10);
     border-color: #1370f2;
 }
-div[data-testid="column"] div[data-testid="stButton"] > button p {
+[data-testid="stMain"] div[data-testid="column"] div[data-testid="stButton"] > button p {
     text-align: left !important;
 }
 </style>
@@ -145,10 +147,42 @@ with st.sidebar:
         st.session_state.active_session = selected_id
         st.rerun()
 
+    # Manage session (rename / delete)
+    with st.expander("⚙️ Manage session"):
+        new_name = st.text_input(
+            "Rename session",
+            value=active_session["display_name"],
+            key=f"rename_{active_session['session_id']}",
+        )
+        if st.button("✏️ Rename", use_container_width=True):
+            if new_name and new_name.strip():
+                updateSessionName(active_session["session_id"], new_name.strip())
+                st.rerun()
+
+        st.divider()
+
+        if st.session_state.get("confirm_delete"):
+            st.warning("This deletes the session, its chat history, and its indexed documents.")
+            col_yes, col_no = st.columns(2)
+            with col_yes:
+                if st.button("✅ Confirm", use_container_width=True):
+                    deleteSession(active_session["session_id"])
+                    st.session_state.pop("confirm_delete", None)
+                    st.session_state.pop("active_session", None)
+                    st.session_state.pop(f"chat_history_{active_session['session_id']}", None)
+                    st.rerun()
+            with col_no:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state.pop("confirm_delete", None)
+                    st.rerun()
+        else:
+            if st.button("🗑️ Delete session", use_container_width=True):
+                st.session_state["confirm_delete"] = True
+                st.rerun()
+
 # Home Page
 if page == "Home":
     active_session = getActiveSession()
-    collection = getCollection()
 
     chatHistoryKey = f"chat_history_{active_session['session_id']}"
     if chatHistoryKey not in st.session_state:
@@ -195,10 +229,12 @@ if page == "Home":
             st.caption(f"📎 Using: {', '.join(files)}")
 
         for msg in chatHistory:
+            # Escape the content so HTML/scripts in messages render as plain text
+            safe_content = html.escape(msg["Content"]).replace("\n", "<br>")
             if msg["role"] == "user":
-                st.markdown(f'<div class="chat-user">{msg["Content"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="chat-user">{safe_content}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="chat-ai">{msg["Content"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="chat-ai">{safe_content}</div>', unsafe_allow_html=True)
 
         if st.button("🗑️ Clear Chat"):
             st.session_state[chatHistoryKey] = []
@@ -207,15 +243,26 @@ if page == "Home":
     # ── Chat input (always visible, on both states) ──
     user_input = st.chat_input("Ask a question about your study materials...")
     if user_input and user_input.strip():
-        chatHistory.append({"role": "user", "Content": user_input.strip()})
+        question = user_input.strip()
         with st.spinner("Thinking..."):
             try:
-                response = chatWithAI(user_input.strip(), chatHistory, collection)
+                # Collection is loaded lazily here — the embedding model only
+                # loads when the user actually sends a message, keeping the
+                # initial page render fast
+                collection = getCollection()
+                # History is passed BEFORE appending, so the current question
+                # isn't duplicated in the model's context
+                response = chatWithAI(question, chatHistory, collection)
             except Exception as e:
-                response = f"Sorry, something went wrong: {str(e)}"
-        chatHistory.append({"role": "assistant", "Content": response})
-        st.session_state[chatHistoryKey] = chatHistory
-        st.rerun()
+                response = None
+                st.error(f"Sorry, something went wrong: {e}")
+
+        # Only save the exchange when it succeeded — errors stay out of history
+        if response is not None:
+            chatHistory.append({"role": "user", "Content": question})
+            chatHistory.append({"role": "assistant", "Content": response})
+            st.session_state[chatHistoryKey] = chatHistory
+            st.rerun()
 
 elif page == "Upload File":
     from backend.rag import fileUpload
@@ -223,7 +270,11 @@ elif page == "Upload File":
 
     st.title("📄 Upload Study Material")
     active_session = getActiveSession()
-    collection = getCollection()
+
+    # Show the success message from a just-completed upload (set before rerun)
+    flash = st.session_state.pop("upload_flash", None)
+    if flash:
+        st.success(flash)
 
     uploaded_file = st.file_uploader("Upload a PDF or PowerPoint file", type=["pdf", "pptx"])
 
@@ -233,17 +284,24 @@ elif page == "Upload File":
         else:
             if st.button("📥 Process File"):
                 with st.spinner("Extracting and indexing your document..."):
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    # Keep the real extension so fileUpload routes to the right extractor
+                    suffix = Path(uploaded_file.name).suffix.lower()
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                         tmp.write(uploaded_file.read())
                         tmp_path = tmp.name
+                    success = False
                     try:
+                        collection = getCollection()
                         fileUpload(tmp_path, collection)
                         addFileSession(active_session["session_id"], uploaded_file.name)
-                        st.success(f"✅ **{uploaded_file.name}** uploaded successfully!")
+                        success = True
                     except Exception as e:
                         st.error(f"Error processing file: {e}")
                     finally:
                         os.unlink(tmp_path)
+                    if success:
+                        st.session_state["upload_flash"] = f"✅ **{uploaded_file.name}** uploaded successfully!"
+                        st.rerun()
 
     # Show uploaded files in current session
     files = active_session.get("files", [])
@@ -260,7 +318,6 @@ elif page == "Summarize":
     st.title("📝 Summarize")
 
     active_session = getActiveSession()
-    collection = getCollection()
 
     files = active_session.get("files", [])
     if not files:
@@ -280,13 +337,19 @@ elif page == "Summarize":
         if st.button("✨ Generate Summary", use_container_width=True):
             with st.spinner("Summarizing your documents…"):
                 try:
-                    st.session_state[summary_key] = summarizeDocument(collection, detail_level)
+                    st.session_state[summary_key] = summarizeDocument(getCollection(), detail_level)
                 except Exception as e:
                     st.error(f"Error generating summary: {e}")
 
         if summary_key in st.session_state:
+            result = st.session_state[summary_key]
             st.divider()
-            st.markdown(st.session_state[summary_key])
+            if result["chunks_used"] < result["total_chunks"]:
+                st.caption(
+                    f"ℹ️ Summarized from {result['chunks_used']} of {result['total_chunks']} "
+                    f"sections, sampled evenly across your documents."
+                )
+            st.markdown(result["summary"])
             if st.button("🗑️ Clear Summary"):
                 del st.session_state[summary_key]
                 st.rerun()
@@ -298,7 +361,6 @@ elif page == "Quiz":
     st.title("🧠 Quiz")
 
     active_session = getActiveSession()
-    collection = getCollection()
 
     files = active_session.get("files", [])
     if not files:
@@ -321,7 +383,7 @@ elif page == "Quiz":
             if st.button("🎲 Generate Quiz", use_container_width=True):
                 with st.spinner("Generating questions…"):
                     try:
-                        questions = generateQuiz(collection, n_questions=n_questions, question_type=q_type)
+                        questions = generateQuiz(getCollection(), n_questions=n_questions, question_type=q_type)
                         st.session_state[q_key] = questions
                         st.session_state[a_key] = {}
                         if r_key in st.session_state:
@@ -347,12 +409,13 @@ elif page == "Quiz":
                         choice = st.radio(
                             "Choose an answer",
                             options=list(opts.keys()),
+                            index=None,
                             format_func=lambda k, o=opts: f"{k}. {o[k]}",
                             key=f"mcq_{sid}_{i}",
                             label_visibility="collapsed",
                             disabled=results is not None,
                         )
-                        answers[i] = choice
+                        answers[i] = choice or ""
                     else:
                         user_ans = st.text_area(
                             "Your answer",
@@ -369,7 +432,7 @@ elif page == "Quiz":
                         else:
                             if q["type"] == "mcq":
                                 correct_key = q["answer"]
-                                correct_text = q["options"][correct_key]
+                                correct_text = q["options"].get(correct_key, "")
                                 st.error(f"❌ Incorrect — Correct answer: **{correct_key}. {correct_text}**")
                             else:
                                 st.error(f"❌ Incorrect — {res['feedback']}")
